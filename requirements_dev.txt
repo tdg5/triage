@@ -4,6 +4,7 @@ PyYAML
 click
 inflection
 psycopg2
+-e git://github.com/dssg/collate.git#egg=collate
 
 pip==8.1.2
 bumpversion==0.5.3

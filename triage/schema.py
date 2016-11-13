@@ -1,13 +1,13 @@
 from sqlalchemy import \
-    Boolean, Integer, String, DateTime,\
+    Boolean, Integer, String, DateTime, Float, \
     Column, ForeignKey, MetaData, Table
 from geoalchemy2 import Geometry
 from inflection import pluralize
 
 coltype_lookup = {
-    'bool': Boolean,
-    'str': String,
-    'int': Integer,
+    'binary': Boolean,
+    'categorical': String,
+    'real': Float,
 }
 
 

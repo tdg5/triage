@@ -3,26 +3,28 @@ entities:
     -
         name: house
         attributes:
-            siding: str
-            construction_year: int
+            siding: categorical
+            construction_year: categorical
+            area: real
     -
         name: kid
         attributes:
-            age: int
+            bll: real
+            dcfs: binary
     -
         name: insurance_policy
         attributes:
-            deductible: bool
+            deductible: binary
     -
         name: address
         spatial: True
         attributes:
-            street_address: str
+            street_address: categorical
     -
         name: inspection
         event: True
         attributes:
-            result: bool
+            result: binary
 
 relationships:
     -
@@ -45,4 +47,4 @@ relationships:
         entity_two: inspection
         type: o2m
 primary_entity: kid
-outcome_variable: lead_level
+outcome_variable: bll
