@@ -29,5 +29,7 @@ def test_entity_aggregates():
 def test_entity_features_event():
     feature_gen = FeatureGenerator(CONFIG)
     result = feature_gen.entity_features('inspection')
-    assert len(result) == 1
+    for q in result[0].get_queries():
+        print(q)
+    assert len(result) == 2
     assert type(result[0]) == collate.SpacetimeAggregation

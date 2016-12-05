@@ -2,6 +2,7 @@ from collate import collate
 import sqlalchemy.sql.expression as ex
 from itertools import chain
 from datetime import date
+from inflection import pluralize
 
 THIS_YEAR = date.today().year
 LAST_5_YEARS = (date(y, 1, 1) for y in range(THIS_YEAR-5, THIS_YEAR)),
@@ -80,7 +81,7 @@ class FeatureGenerator(object):
         return collate.SpacetimeAggregation(
             self.entity_aggregates(entity_name),
             ['1 year',  'all'],
-            entity_name,
+            pluralize(entity_name),
             category,
             LAST_5_YEARS,
             date_column='event_datetime'
@@ -101,7 +102,7 @@ class FeatureGenerator(object):
             return [
                 Aggregation(
                     self.entity_aggregates(entity_name),
-                    entity_name,
+                    pluralize(entity_name),
                     category
                 )
                 for category in categories
@@ -122,3 +123,8 @@ class FeatureGenerator(object):
             self.entity_features(relation)
             for relation in primary_relationships
         ]
+
+    def basic_features(self):
+        primary_entity = self.primary_entity_features()
+        one_step = self.primary_relation_features()
+        return primary_entity + one_step

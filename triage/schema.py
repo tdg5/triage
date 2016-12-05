@@ -56,8 +56,14 @@ class InspectionsSchema(object):
         """
         self.models = {}
         self.metadata = MetaData()
+        self.config = config
         self._basic_entities(config['entities'])
         self._relationships(config['relationships'])
+
+    #def mapped_models(self):
+        #for entity in self.config['entities']:
+
+            #cls = type(entity['name'], (object,), 
 
     def _basic_entities(self, entity_config):
         """Create top-level entities
