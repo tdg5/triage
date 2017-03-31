@@ -48,10 +48,11 @@ class SerialPipeline(PipelineBase):
         logging.debug('---------MATRIX GENERATION------------')
         logging.debug('---------------------')
 
-        updated_split_definitions = self.architect.chop_data(
+        updated_split_definitions, build_tasks = self.architect.generate_plans(
             split_definitions,
-            feature_dict
+            [feature_dict]
         )
+        self.architect.build_all_matrices(build_tasks)
 
         for split in updated_split_definitions:
             train_store = MettaCSVMatrixStore(
