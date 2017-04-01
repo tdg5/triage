@@ -43,13 +43,21 @@ class LocalParallelPipeline(PipelineBase):
             'Generating features for %s as_of_times',
             len(all_as_of_times)
         )
-        feature_tables = self.feature_generator.generate(
-            feature_aggregations=self.config['feature_aggregations'],
+        feature_table_tasks = self.feature_generator.generate_all_table_tasks(
+            feature_aggregation_config=self.config['feature_aggregations'],
             feature_dates=all_as_of_times,
         )
 
+        partial_create_table = partial(
+            create_feature_table,
+            feature_generator_factory=self.feature_generator_factory,
+            db_connection_string=self.db_engine.url
+        )
+
+        self.parallelize(partial_create_table, feature_table_tasks.values())
+
         feature_dict = self.feature_dictionary_creator\
-            .feature_dictionary(feature_tables)
+            .feature_dictionary(feature_table_tasks.keys())
 
         # 4. create training and test sets
         logging.info('Creating matrices')
@@ -72,22 +80,7 @@ class LocalParallelPipeline(PipelineBase):
             len(build_tasks.keys()),
             self.n_processes
         )
-        with ProcessPoolExecutor(max_workers=self.n_processes) as pool:
-            num_successes = 0
-            num_failures = 0
-            for successful in pool.map(
-                partial_build_matrix,
-                build_tasks.values()
-            ):
-                if successful:
-                    num_successes += 1
-                else:
-                    num_failures += 1
-            logging.info(
-                'Done building. successes: %s, failures: %s',
-                num_successes,
-                num_failures
-            )
+        self.parallelize(partial_build_matrix, build_tasks.values())
 
         for split in updated_split_definitions:
             logging.info('Starting split')
@@ -164,25 +157,43 @@ class LocalParallelPipeline(PipelineBase):
                     'Starting parallel testing with %s processes',
                     self.n_processes
                 )
-                with ProcessPoolExecutor(max_workers=self.n_processes) as pool:
-                    num_successes = 0
-                    num_failures = 0
-                    for successful in pool.map(
-                        partial_test_and_score,
-                        model_ids
-                    ):
-                        if successful:
-                            num_successes += 1
-                        else:
-                            num_failures += 1
-                    logging.info(
-                        'Done testing. successes: %s, failures: %s',
-                        num_successes,
-                        num_failures
-                    )
+                self.parallelize(partial_test_and_score, model_ids)
                 logging.info('Cleaned up concurrent pool')
             logging.info('Done with test matrix')
         logging.info('Done with split')
+
+    def parallelize(self, partially_bound_function, tasks):
+        with ProcessPoolExecutor(max_workers=self.n_processes) as pool:
+            num_successes = 0
+            num_failures = 0
+            for successful in pool.map(
+                partially_bound_function,
+                tasks
+            ):
+                if successful:
+                    num_successes += 1
+                else:
+                    num_failures += 1
+            logging.info(
+                'Done. successes: %s, failures: %s',
+                num_successes,
+                num_failures
+            )
+
+
+def create_feature_table(
+    table_task,
+    feature_generator_factory,
+    db_connection_string
+):
+    try:
+        db_engine = create_engine(db_connection_string)
+        feature_generator = feature_generator_factory(db_engine)
+        feature_generator.create_group_table(**table_task)
+        return True
+    except Exception as e:
+        logging.error('Child error: %s', e)
+        return False
 
 
 def build_matrix(
