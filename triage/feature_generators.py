@@ -108,8 +108,10 @@ class FeatureGenerator(object):
             feature_aggregation_config,
             feature_dates
         )
-        for table_name, kwargs in table_tasks.items():
-            self.create_group_table(**kwargs)
+        for table_name, task in table_tasks.items():
+            self.prepare_table(**(task['prepare']))
+            self.insert_into_table(task['inserts'])
+            self.finalize_table(**(task['finalize']))
         return table_tasks.keys()
 
     def _explain_selects(self, aggregations):
@@ -141,14 +143,29 @@ class FeatureGenerator(object):
         """
         logging.info('Processing group table %s', group_table)
         conn = self.db_engine.connect()
+        for insert in inserts:
+            conn.execute(insert)
+        logging.info('Done processing %s', group_table)
+
+    def prepare_table(self, drop, create):
+        conn = self.db_engine.connect()
         trans = conn.begin()
         conn.execute(drop)
         conn.execute(create)
+        trans.commit()
+
+    def insert_into_table(self, inserts):
+        conn = self.db_engine.connect()
+        trans = conn.begin()
         for insert in inserts:
             conn.execute(insert)
+        trans.commit()
+
+    def finalize_table(self, index):
+        conn = self.db_engine.connect()
+        trans = conn.begin()
         conn.execute(index)
         trans.commit()
-        logging.info('Done processing %s', group_table)
 
     def _generate_table_tasks_for(self, aggregation):
         """Generates SQL commands for creating, populating, and indexing
@@ -175,11 +192,9 @@ class FeatureGenerator(object):
                 aggregation.get_table_name(group=group)
             )
             table_tasks[group_table] = {
-                'group_table': group_table,
-                'drop': drops[group],
-                'create': creates[group],
+                'prepare': {'drop': drops[group], 'create': creates[group]},
                 'inserts': inserts[group],
-                'index': indexes[group]
+                'finalize': {'index': indexes[group]},
             }
 
         return table_tasks

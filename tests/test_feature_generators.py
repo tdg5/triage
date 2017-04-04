@@ -185,13 +185,22 @@ def test_dynamic_categoricals():
 
 def test_generate_table_tasks():
     aggregate_config = [{
-        'prefix': 'aprefix',
+        'prefix': 'prefix1',
         'categoricals': [
             {
                 'column': 'cat_one',
                 'choice_query': 'select distinct(cat_one) from data',
                 'metrics': ['sum']
             },
+        ],
+        'groups': ['entity_id'],
+        'intervals': ['all'],
+        'knowledge_date_column': 'knowledge_date',
+        'from_obj': 'data'
+    }, {
+        'prefix': 'prefix2',
+        'aggregates': [
+            {'quantity': 'quantity_one', 'metrics': ['count']},
         ],
         'groups': ['entity_id'],
         'intervals': ['all'],
@@ -211,8 +220,8 @@ def test_generate_table_tasks():
             feature_dates=['2013-09-30', '2014-09-30'],
             feature_aggregation_config=aggregate_config,
         )
-        task = table_tasks['aprefix_entity_id']
-        assert 'DROP TABLE' in task['drop']
-        assert 'CREATE INDEX' in task['index']
-        assert isinstance(task['inserts'], list)
-        assert 'CREATE TABLE' in str(task['create'])
+        for task in table_tasks.values():
+            assert 'DROP TABLE' in task['prepare']['drop']
+            assert 'CREATE INDEX' in task['finalize']['index']
+            assert isinstance(task['inserts'], list)
+            assert 'CREATE TABLE' in str(task['prepare']['create'])
