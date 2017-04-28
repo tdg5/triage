@@ -130,13 +130,15 @@ class PipelineLeakageTest(unittest.TestCase):
                 'scoring': scoring_config,
             }
 
+            pipeline = None
             with TemporaryDirectory() as temp_dir:
-                pipeline_class(
+                pipeline = pipeline_class(
                     config=experiment_config,
                     db_engine=db_engine,
                     model_storage_class=FSModelStorageEngine,
                     project_path=os.path.join(temp_dir, 'inspections')
-                ).run()
+                )
+                pipeline.run()
 
             # assert that precision@top100 is perfect
             session = sessionmaker(bind=db_engine)()
