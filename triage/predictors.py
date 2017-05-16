@@ -104,13 +104,15 @@ class Predictor(object):
         for prediction in existing_predictions:
             score_lookup[(
                 prediction.entity_id,
-                prediction.as_of_date.date().isoformat()
+                str(prediction.as_of_date)
             )] = prediction.score
         if 'as_of_date' in index.names:
             score_iterator = (score_lookup[row] for row in index)
         else:
             as_of_date = matrix_store.metadata['end_time'].date().isoformat()
             score_iterator = (score_lookup[(row, as_of_date)] for row in index)
+        #import pdb
+        #pdb.set_trace()
         return numpy.fromiter(score_iterator, float)
 
     @db_retry

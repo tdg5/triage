@@ -29,6 +29,9 @@ temporal_config:
 # These are used to generate appropriate labels for each train/test split
 events_table: 'events'
 
+# An entity table is expected, with every possible entity id included
+entity_table_name: 'buildings'
+
 # FEATURE GENERATION
 # The aggregate features to generate for each train/test split
 #

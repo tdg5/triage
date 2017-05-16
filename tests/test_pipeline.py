@@ -13,6 +13,12 @@ from triage.pipelines import LocalParallelPipeline, SerialPipeline
 
 
 def populate_source_data(db_engine):
+    entities = [
+        (1,),
+        (2,),
+        (3,),
+    ]
+
     complaints = [
         (1, '2010-10-01', 5),
         (1, '2011-10-01', 4),
@@ -87,6 +93,11 @@ def populate_source_data(db_engine):
             event
         )
 
+    db_engine.execute('''create table entities (entity_id int)''')
+    for entity in entities:
+        db_engine.execute('insert into entities values (%s)', entity)
+
+
 def num_linked_evaluations(db_engine):
     num_evaluations = len([
         row for row in db_engine.execute('''
@@ -144,6 +155,7 @@ def simple_pipeline_test(pipeline_class):
         experiment_config = {
             'events_table': 'events',
             'entity_column_name': 'entity_id',
+            'entity_table_name': 'entities',
             'model_comment': 'test2-final-final',
             'model_group_keys': ['label_name', 'label_type'],
             'feature_aggregations': feature_config,
@@ -279,6 +291,7 @@ def reuse_pipeline_test(pipeline_class):
         experiment_config = {
             'events_table': 'events',
             'entity_column_name': 'entity_id',
+            'entity_table_name': 'entities',
             'model_comment': 'test2-final-final',
             'model_group_keys': ['label_name', 'label_type'],
             'feature_aggregations': feature_config,

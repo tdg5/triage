@@ -44,6 +44,7 @@ class PipelineBase(object):
 
         self.labels_table_name = 'labels'
         self.features_schema_name = 'features'
+        self.entity_table_name = self.config['entity_table_name']
         if project_path:
             self.matrices_directory = os.path.join(self.project_path, 'matrices')
             if not os.path.exists(self.matrices_directory):
@@ -111,6 +112,7 @@ class PipelineBase(object):
                 'features_schema_name': self.features_schema_name,
                 'labels_schema_name': 'public',
                 'labels_table_name': self.labels_table_name,
+                'entities_table_name': self.entity_table_name,
             },
             matrix_directory=self.matrices_directory,
             user_metadata={},
