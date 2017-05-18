@@ -1,21 +1,53 @@
 import logging
 
 
+class StateFilter(object):
+    def __init__(self, sparse_state_table, filter_logic):
+        self.sparse_state_table = sparse_state_table
+        self.filter_logic = filter_logic
+
+    def join_sql(self, join_table, join_date):
+        return '''
+            join {state_table} on (
+                {state_table}.entity_id = {join_table}.entity_id and
+                {state_table}.as_of_time = '{join_date}'::timestamp and
+                ({state_filter_logic})
+            )
+        '''.format(
+            state_table=self.sparse_state_table,
+            state_filter_logic=self.filter_logic,
+            join_date=join_date,
+            join_table=join_table
+        )
+
+
 class BinaryLabelGenerator(object):
     def __init__(self, events_table, db_engine):
         self.events_table = events_table
         self.db_engine = db_engine
 
-    def generate(self, start_date, label_window, labels_table):
+    def generate(
+            self,
+            start_date,
+            label_window,
+            labels_table,
+            state_filter=None,
+    ):
+        if state_filter:
+            state_join_sql = state_filter.join_sql(self.events_table, start_date)
+        else:
+            state_join_sql = ''
+
         query = """insert into {labels_table} (
             select
-                entity_id,
+                {events_table}.entity_id,
                 '{start_date}'::date as as_of_date,
                 '{label_window}'::interval as label_window,
                 'outcome' as label_name,
                 'binary' as label_type,
                 bool_or(outcome::bool)::int as label
             from {events_table}
+            {state_join_sql}
             where '{start_date}' <= outcome_date
             and outcome_date < '{start_date}'::timestamp + interval '{label_window}'
             group by 1, 2, 3, 4, 5
@@ -23,7 +55,8 @@ class BinaryLabelGenerator(object):
             events_table=self.events_table,
             labels_table=labels_table,
             start_date=start_date,
-            label_window=label_window
+            label_window=label_window,
+            state_join_sql=state_join_sql
         )
         logging.debug(query)
         self.db_engine.execute(query)

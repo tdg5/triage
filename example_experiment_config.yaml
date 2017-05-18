@@ -32,6 +32,9 @@ events_table: 'events'
 # An entity table is expected, with every possible entity id included
 entity_table_name: 'buildings'
 
+# Dense state table, entity_id/state/start/end
+dense_state_table_name: 'states'
+
 # FEATURE GENERATION
 # The aggregate features to generate for each train/test split
 #
