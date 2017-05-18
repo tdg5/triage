@@ -2,6 +2,7 @@ from triage.state_table_generators import SparseStateTableGenerator
 import testing.postgresql
 from datetime import datetime
 from sqlalchemy.engine import create_engine
+from tests.utils import assert_index
 
 
 def create_dense_state_table(db_engine, data):
@@ -31,7 +32,7 @@ def test_sparse_state_table_generator():
         engine = create_engine(postgresql.url())
         create_dense_state_table(engine, input_data)
 
-        table_generator = SparseStateTableGenerator(engine)
+        table_generator = SparseStateTableGenerator(engine, 'exp_hash')
         as_of_times = [
             datetime(2016, 1, 1),
             datetime(2016, 2, 1),
@@ -40,10 +41,10 @@ def test_sparse_state_table_generator():
             datetime(2016, 5, 1),
             datetime(2016, 6, 1),
         ]
-        sparse_table_name = table_generator.generate('states', as_of_times)
+        table_generator.generate('states', as_of_times)
         results = [row for row in engine.execute(
             'select entity_id, as_of_time, injail, permitted from {} order by entity_id, as_of_time'.format(
-                sparse_table_name
+                table_generator.table_name
             ))]
         expected_output = [
             # entity_id, as_of_time, injail, permitted
@@ -57,6 +58,6 @@ def test_sparse_state_table_generator():
             (6, datetime(2016, 4, 1), False, True),
             (6, datetime(2016, 5, 1), False, True),
         ]
-        import logging
-        logging.warning(results)
         assert results == expected_output
+        assert_index(engine, table_generator.table_name, 'entity_id')
+        assert_index(engine, table_generator.table_name, 'as_of_time')

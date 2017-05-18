@@ -8,6 +8,7 @@ from triage.features import \
 from triage.model_trainers import ModelTrainer
 from triage.predictors import Predictor
 from triage.scoring import ModelScorer
+from triage.state_table_generators import SparseStateTableGenerator
 from triage.utils import save_experiment_and_get_hash
 from timechop.timechop import Timechop
 from timechop.architect import Architect
@@ -77,6 +78,11 @@ class PipelineBase(object):
             test_durations=split_config['test_durations'],
         )
 
+        self.state_table_generator_factory = partial(
+            SparseStateTableGenerator,
+            experiment_hash=self.experiment_hash
+        )
+
         self.label_generator_factory = partial(
             BinaryLabelGenerator,
             events_table=self.config['events_table'],
@@ -143,6 +149,7 @@ class PipelineBase(object):
 
     def initialize_components(self):
         self.chopper = self.chopper_factory()
+        self.state_table_generator = self.state_table_generator_factory(db_engine=self.db_engine)
         self.label_generator = self.label_generator_factory(db_engine=self.db_engine)
         self.feature_generator = self.feature_generator_factory(db_engine=self.db_engine)
         self.feature_dictionary_creator = self.feature_dictionary_creator_factory(db_engine=self.db_engine)
@@ -197,6 +204,13 @@ class PipelineBase(object):
             )
             self._all_as_of_times = list(set(all_as_of_times))
         return self._all_as_of_times
+
+    @property
+    def sparse_state_table(self):
+        if not self._sparse_state_table:
+            self.state_table_generator.generate(self.all_as_of_times)
+            self._sparse_state_table = self.state_table_generator.table_name
+        return self._sparse_state_table
 
     @property
     def feature_table_tasks(self):
