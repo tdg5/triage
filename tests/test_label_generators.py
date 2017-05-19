@@ -1,4 +1,5 @@
-from triage.label_generators import BinaryLabelGenerator, StateFilter
+from triage.label_generators import BinaryLabelGenerator
+from triage.state_table_generators import StateFilter
 import testing.postgresql
 from sqlalchemy import create_engine
 from datetime import date, timedelta

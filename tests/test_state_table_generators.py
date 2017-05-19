@@ -1,23 +1,8 @@
-from triage.state_table_generators import SparseStateTableGenerator
+from triage.state_table_generators import StateTableGenerator
 import testing.postgresql
 from datetime import datetime
 from sqlalchemy.engine import create_engine
-from tests.utils import assert_index
-
-
-def create_dense_state_table(db_engine, data):
-    db_engine.execute('''create table states (
-        entity_id int,
-        state text,
-        start_time timestamp,
-        end_time timestamp
-    )''')
-
-    for row in data:
-        db_engine.execute(
-            'insert into states values (%s, %s, %s, %s)',
-            row
-        )
+from tests.utils import assert_index, create_dense_state_table
 
 
 def test_sparse_state_table_generator():
@@ -30,9 +15,9 @@ def test_sparse_state_table_generator():
 
     with testing.postgresql.Postgresql() as postgresql:
         engine = create_engine(postgresql.url())
-        create_dense_state_table(engine, input_data)
+        create_dense_state_table(engine, 'states', input_data)
 
-        table_generator = SparseStateTableGenerator(engine, 'exp_hash')
+        table_generator = StateTableGenerator(engine, 'exp_hash')
         as_of_times = [
             datetime(2016, 1, 1),
             datetime(2016, 2, 1),
@@ -41,10 +26,10 @@ def test_sparse_state_table_generator():
             datetime(2016, 5, 1),
             datetime(2016, 6, 1),
         ]
-        table_generator.generate('states', as_of_times)
+        table_generator.generate_sparse_table('states', as_of_times)
         results = [row for row in engine.execute(
             'select entity_id, as_of_time, injail, permitted from {} order by entity_id, as_of_time'.format(
-                table_generator.table_name
+                table_generator.sparse_table_name
             ))]
         expected_output = [
             # entity_id, as_of_time, injail, permitted
@@ -59,5 +44,5 @@ def test_sparse_state_table_generator():
             (6, datetime(2016, 5, 1), False, True),
         ]
         assert results == expected_output
-        assert_index(engine, table_generator.table_name, 'entity_id')
-        assert_index(engine, table_generator.table_name, 'as_of_time')
+        assert_index(engine, table_generator.sparse_table_name, 'entity_id')
+        assert_index(engine, table_generator.sparse_table_name, 'as_of_time')

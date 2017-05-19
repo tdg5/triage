@@ -8,7 +8,7 @@ from triage.features import \
 from triage.model_trainers import ModelTrainer
 from triage.predictors import Predictor
 from triage.scoring import ModelScorer
-from triage.state_table_generators import SparseStateTableGenerator
+from triage.state_table_generators import StateTableGenerator, StateFilter
 from triage.utils import save_experiment_and_get_hash
 from timechop.timechop import Timechop
 from timechop.architect import Architect
@@ -58,6 +58,7 @@ class PipelineBase(object):
         self._matrix_build_tasks = None
         self._feature_table_tasks = None
         self._all_as_of_times = None
+        self._sparse_state_table = None
         self.initialize_factories()
         self.initialize_components()
 
@@ -79,7 +80,7 @@ class PipelineBase(object):
         )
 
         self.state_table_generator_factory = partial(
-            SparseStateTableGenerator,
+            StateTableGenerator,
             experiment_hash=self.experiment_hash
         )
 
@@ -208,8 +209,12 @@ class PipelineBase(object):
     @property
     def sparse_state_table(self):
         if not self._sparse_state_table:
-            self.state_table_generator.generate(self.all_as_of_times)
-            self._sparse_state_table = self.state_table_generator.table_name
+            logging.info('Sparse state table not found, generating')
+            self.state_table_generator.generate_sparse_table(
+                self.config['dense_state_table_name'],
+                self.all_as_of_times
+            )
+            self._sparse_state_table = self.state_table_generator.sparse_table_name
         return self._sparse_state_table
 
     @property
@@ -293,9 +298,13 @@ class PipelineBase(object):
         Results are stored in the database, not returned
         """
         self.label_generator.generate_all_labels(
-            self.labels_table_name,
-            self.all_as_of_times,
-            self.all_label_windows
+            labels_table=self.labels_table_name,
+            as_of_times=self.all_as_of_times,
+            label_windows=self.all_label_windows,
+            state_filter=StateFilter(
+                sparse_state_table=self.sparse_state_table,
+                filter_logic=self.config['state_filter_logic']
+            )
         )
 
     def update_split_definitions(self, new_split_definitions):
@@ -325,5 +334,8 @@ class PipelineBase(object):
         pass
 
     def run(self):
-        self.build_matrices()
+        try:
+            self.build_matrices()
+        finally:
+            self.state_table_generator.clean_up()
         self.catwalk()

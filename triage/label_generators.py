@@ -1,37 +1,17 @@
 import logging
 
 
-class StateFilter(object):
-    def __init__(self, sparse_state_table, filter_logic):
-        self.sparse_state_table = sparse_state_table
-        self.filter_logic = filter_logic
-
-    def join_sql(self, join_table, join_date):
-        return '''
-            join {state_table} on (
-                {state_table}.entity_id = {join_table}.entity_id and
-                {state_table}.as_of_time = '{join_date}'::timestamp and
-                ({state_filter_logic})
-            )
-        '''.format(
-            state_table=self.sparse_state_table,
-            state_filter_logic=self.filter_logic,
-            join_date=join_date,
-            join_table=join_table
-        )
-
-
 class BinaryLabelGenerator(object):
     def __init__(self, events_table, db_engine):
         self.events_table = events_table
         self.db_engine = db_engine
 
     def generate(
-            self,
-            start_date,
-            label_window,
-            labels_table,
-            state_filter=None,
+        self,
+        start_date,
+        label_window,
+        labels_table,
+        state_filter=None,
     ):
         if state_filter:
             state_join_sql = state_filter.join_sql(self.events_table, start_date)
@@ -76,7 +56,13 @@ class BinaryLabelGenerator(object):
             label int
         )'''.format(labels_table_name))
 
-    def generate_all_labels(self, labels_table, as_of_times, label_windows):
+    def generate_all_labels(
+        self,
+        labels_table,
+        as_of_times,
+        label_windows,
+        state_filter=None
+    ):
         self._create_labels_table(labels_table)
         logging.info('Creating labels for %s as of times and %s label windows',
                      len(as_of_times),
@@ -86,5 +72,14 @@ class BinaryLabelGenerator(object):
                 self.generate(
                     start_date=as_of_time,
                     label_window=label_window,
-                    labels_table=labels_table
+                    labels_table=labels_table,
+                    state_filter=state_filter
                 )
+        nrows = [
+            row[0] for row in
+            self.db_engine.execute('select count(*) from {}'.format(labels_table))
+        ][0]
+        if nrows == 0:
+            logging.warning('Done creating labels, but no rows in labels table!')
+        else:
+            logging.info('Rows in labels table: %s', nrows)

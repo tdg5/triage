@@ -65,6 +65,7 @@ def assert_index(engine, table, column):
     """Assert that a table has an index on a given column
 
     Does not care which position the column is in the index
+    Modified from https://www.gab.lc/articles/index_on_id_with_postgresql
 
     Args:
         engine (sqlalchemy.engine) a database engine
@@ -88,3 +89,18 @@ def assert_index(engine, table, column):
     )
     num_results = len([row for row in engine.execute(query)])
     assert num_results >= 1
+
+
+def create_dense_state_table(db_engine, table_name, data):
+    db_engine.execute('''create table {} (
+        entity_id int,
+        state text,
+        start_time timestamp,
+        end_time timestamp
+    )'''.format(table_name))
+
+    for row in data:
+        db_engine.execute(
+            'insert into {} values (%s, %s, %s, %s)'.format(table_name),
+            row
+        )

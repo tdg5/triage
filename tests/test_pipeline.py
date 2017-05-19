@@ -5,6 +5,7 @@ from functools import partial
 from tempfile import TemporaryDirectory
 import testing.postgresql
 from unittest.mock import Mock
+from tests.utils import create_dense_state_table
 
 from triage.db import ensure_db
 from triage.storage import FSModelStorageEngine
@@ -69,6 +70,13 @@ def populate_source_data(db_engine):
         (3, 0, '2015-01-01'),
     ]
 
+    states = [
+        (1, 'iscat', datetime(2011, 1, 1), datetime(2016, 6, 1)),
+        (2, 'iscat', datetime(2011, 2, 5), datetime(2016, 5, 5)),
+        (3, 'isdog', datetime(2011, 7, 7), datetime(2014, 7, 15)),
+        (3, 'isdog', datetime(2011, 3, 7), datetime(2016, 4, 2)),
+    ]
+
     db_engine.execute('''create table cat_complaints (
         entity_id int,
         as_of_date date,
@@ -96,6 +104,8 @@ def populate_source_data(db_engine):
     db_engine.execute('''create table entities (entity_id int)''')
     for entity in entities:
         db_engine.execute('insert into entities values (%s)', entity)
+
+    create_dense_state_table(db_engine, 'dense_states', states)
 
 
 def num_linked_evaluations(db_engine):
@@ -156,6 +166,8 @@ def simple_pipeline_test(pipeline_class):
             'events_table': 'events',
             'entity_column_name': 'entity_id',
             'entity_table_name': 'entities',
+            'dense_state_table_name': 'dense_states',
+            'state_filter_logic': 'iscat or isdog',
             'model_comment': 'test2-final-final',
             'model_group_keys': ['label_name', 'label_type'],
             'feature_aggregations': feature_config,
