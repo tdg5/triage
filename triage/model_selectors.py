@@ -16,7 +16,7 @@ class ModelSelector(object):
         )'''.format(table_name))
 
     def _populate_table(self, model_group_ids, metrics, output_table):
-        for metric, param in metrics:
+        for metric in metrics:
             self.db_engine.execute('''
                 insert into {new_table}
                 WITH model_ranks AS (
@@ -44,11 +44,18 @@ class ModelSelector(object):
             '''.format(
                 model_group_ids=','.join(map(str, model_group_ids)),
                 models_table=self.models_table,
-                metric=metric,
-                metric_param=param,
+                metric=metric['metric'],
+                metric_param=metric['param'],
                 new_table=output_table
             ))
 
     def create_and_populate_table(self, model_group_ids, metrics, output_table):
         self._create_table(output_table)
         self._populate_table(model_group_ids, metrics, output_table)
+
+    def phase_one(self, model_group_ids, metrics, output_table):
+        for metric in metrics:
+            query = '''
+                select 
+            '''
+The x-axis is the same value of X (difference from the best performing) and the y-axis is the fraction of models in that model group whose metric values are within X of the best model evaluated on the same test set, with each line being a model group. That is, for each test set, calculate the metric on all of the models, find the best one, and calculate the distance from the best for the others, then aggregate to the model group level asking for each value of X what fraction of models in that group were that close to the best one. 

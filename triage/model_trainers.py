@@ -211,10 +211,13 @@ class ModelTrainer(object):
         Returns: (int) a database id for the model
         """
         misc_db_parameters['run_time'] = datetime.datetime.now().isoformat()
+
+        # generate pipeline object based on classpath
         trained_model, feature_names = self._train(
             matrix_store,
             class_path,
             parameters,
+            # pipeline object
         )
 
         unique_parameters = self.unique_parameters(parameters)
@@ -225,7 +228,7 @@ class ModelTrainer(object):
              matrix_store.metadata,
         )
         logging.info('Trained model: %s', model_hash)
-        model_store.write(trained_model)
+        model_store.write(trained_model, #pipeline object)
         logging.info('Cached model: %s', model_hash)
         model_id = self._write_model_to_db(
             class_path,
