@@ -169,18 +169,37 @@ def test_model_groups_past_threshold_as_of():
             (1, 1, '2014-01-01', 'precision@', '100_abs', 0.5, 0.0, 0.38),
             (1, 2, '2015-01-01', 'precision@', '100_abs', 0.5, 0.38, 0.0),
             (1, 3, '2016-01-01', 'precision@', '100_abs', 0.46, 0.0, 0.11),
-            # model group 2 should not pass because the min value never passes
+            (1, 1, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            (1, 2, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (1, 3, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # model group 2 should not pass because the min precision never passes
             (2, 4, '2014-01-01', 'precision@', '100_abs', 0.39, 0.11, 0.5),
             (2, 5, '2015-01-01', 'precision@', '100_abs', 0.38, 0.5, 0.12),
             (2, 6, '2016-01-01', 'precision@', '100_abs', 0.34, 0.12, 0.11),
+            (2, 4, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            (2, 5, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (2, 6, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
             # model group 3 not included in this round
             (3, 7, '2014-01-01', 'precision@', '100_abs', 0.28, 0.22, 0.0),
             (3, 8, '2015-01-01', 'precision@', '100_abs', 0.88, 0.0, 0.02),
             (3, 9, '2016-01-01', 'precision@', '100_abs', 0.44, 0.02, 0.11),
-            # model group 4 should not pass because it is never that close
+            (3, 7, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            (3, 8, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (3, 9, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # model group 4 should not pass because precision is never that close
             (4, 10, '2014-01-01', 'precision@', '100_abs', 0.29, 0.21, 0.21),
             (4, 11, '2015-01-01', 'precision@', '100_abs', 0.67, 0.21, 0.21),
             (4, 12, '2016-01-01', 'precision@', '100_abs', 0.25, 0.21, 0.21),
+            (4, 10, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            (4, 11, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (4, 12, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # model group 5 should not pass because precision is good but not recall
+            (5, 13, '2014-01-01', 'precision@', '100_abs', 0.5, 0.0, 0.38),
+            (5, 14, '2015-01-01', 'precision@', '100_abs', 0.5, 0.38, 0.0),
+            (5, 15, '2016-01-01', 'precision@', '100_abs', 0.46, 0.0, 0.11),
+            (5, 13, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            (5, 14, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (5, 16, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
         ]
         for dist_row in distance_rows:
             engine.execute(
@@ -195,11 +214,17 @@ def test_model_groups_past_threshold_as_of():
                     'max_below_best': 0.2,
                     'min_value': 0.4,
                 },
+                {
+                    'metric': 'recall@',
+                    'metric_param': '100_abs',
+                    'max_below_best': 0.2,
+                    'min_value': 0.4,
+                }
             ],
-            model_group_ids=[1, 2, 4],
+            model_group_ids=[1, 2, 4, 5],
             train_end_time='2014-01-01',
         )
-        assert model_groups == set([1])
+        assert model_groups == set([1, 5])
 
 
 def test_get_all_best_diffs():
