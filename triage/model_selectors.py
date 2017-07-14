@@ -1,30 +1,30 @@
 import pandas as pd
 import copy
-import random
 
 
-def choose_highest_model_group_id(
-    db_engine,
-    model_group_ids,
-    train_end_date,
-    metric,
-    metric_param
-):
-    return max(model_group_ids)
+def highest_metric_value(metric, metric_param, df):
+    """Pick the model group with the highest metric value
 
+    Arguments:
+        metric (string) -- model evaluation metric, such as 'precision@'
+        metric_param (string) -- model evaluation metric parameter,
+            such as '300_abs'
+        df (pandas.DataFrame) -- dataframe that is keyed on model group id,
+            containing the columns:
+                model_id,
+                train_end_time,
+                metric,
+                parameter,
+                raw_value,
+                below_best,
+                below_best_next_time
+    Returns: (int) the model group id to select, with highest raw metric value
+    """
+    return df[df['raw_value'] == df['raw_value'].max()].index.tolist()[0]
 
-def choose_random_model_group_id(
-    db_engine,
-    model_group_ids,
-    train_end_date,
-    metric,
-    metric_param
-):
-    return random.choice(model_group_ids)
 
 SELECTION_RULES = {
-    'highest_id': choose_highest_model_group_id,
-    'random': choose_random_model_group_id,
+    'highest_metric_value': highest_metric_value,
 }
 
 
@@ -44,10 +44,9 @@ def plot_best_dist(metric, metric_param, df_best_dist, **plt_format_args):
        across the graph.
 
     Arguments:
-        metric (string) -- model evaluation metric, such as 'precision@'; if not specified the object's
-                           default_metric will be used.
-        metric_param (string) -- model evaluation metric parameter, such as '300_abs'; if not specified
-                                 the object's default_metric_param will be used.
+        metric (string) -- model evaluation metric, such as 'precision@'
+        metric_param (string) -- model evaluation metric parameter, such as '300_abs'
+        df_best_dist (pandas.DataFrame)
         **plt_format_args -- formatting arguments passed through to plot_cats()
     """
 
@@ -76,22 +75,27 @@ def plot_all_best_dist(metrics_with_dfs):
         )
 
 class ModelSelector(object):
-    def __init__(self, db_engine, models_table):
+    def __init__(self, db_engine, models_table, distance_table):
         self.db_engine = db_engine
         self.models_table = models_table
+        self.distance_table = distance_table
 
-    def _create_distance_table(self, table_name):
+    def _create_distance_table(self):
         self.db_engine.execute('''create table {} (
             model_group_id int,
             model_id int,
             train_end_time timestamp,
             metric text,
             parameter text,
+            raw_value float,
             below_best float,
             below_best_next_time float
-        )'''.format(table_name))
+        )'''.format(self.distance_table))
 
-    def _populate_distance_table(self, model_group_ids, metrics, table_name):
+    def _populate_distance_table(self, model_group_ids, metrics):
+        # TODO: allow min cutoff train date
+        # TODO: only include immediate eval
+        # TODO: yell at user if not all model groups included have the same test sets
         for metric in metrics:
             self.db_engine.execute('''
                 insert into {new_table}
@@ -128,6 +132,7 @@ class ModelSelector(object):
                         train_end_time,
                         '{metric}',
                         '{metric_param}',
+                        value as raw_value,
                         best_val - value below_best
                     FROM model_tols
                 )
@@ -140,78 +145,55 @@ class ModelSelector(object):
                     ) below_best_next_time
                 from current_best_vals
             '''.format(
-                model_group_ids=','.join(map(str, model_group_ids)),
+                model_group_ids=self._model_group_sql(model_group_ids),
                 models_table=self.models_table,
                 metric=metric['metric'],
                 metric_param=metric['param'],
-                new_table=table_name
+                new_table=self.distance_table
             ))
 
     def create_and_populate_distance_table(
         self,
         model_group_ids,
         metrics,
-        distance_table
     ):
-        self._create_distance_table(distance_table)
-        self._populate_distance_table(model_group_ids, metrics, distance_table)
+        self._create_distance_table()
+        self._populate_distance_table(model_group_ids, metrics)
 
-    def _hyperparam_sql(self, hyperparam):
-        """Helper function to generate SQL snippet for pulling different
-            types of model configuration
-           and hyperparameter information out of the database.
+    def _model_group_sql(self, model_group_ids):
+        return ','.join(map(str, model_group_ids))
 
-        Arguments:
-            hyperparam (string) -- name of the hyperparameter to query
-
-        Returns: string SQL snippet for querying hyperparameter
-        """
-
-        if hyperparam is None:
-            hyperparam_sql = 'NULL::VARCHAR(64) AS hyperparam,'
-        elif hyperparam == 'feature_hash':
-            hyperparam_sql = "md5(mg.feature_list::VARCHAR) AS hyperparam,"
-        else:
-            hyperparam_sql = "COALESCE(mg.model_parameters->>'{}', mg.model_config->>'{}') AS hyperparam,".format(hyperparam, hyperparam)
-
-        return hyperparam_sql
-
-    def get_best_dist(self, dist_table, metric, metric_param, max_below_best, model_type=None, hyperparam=None):
+    def get_best_dist(
+        self,
+        metric,
+        metric_param,
+        model_group_ids,
+        max_below_best,
+    ):
         """Fetch a best distance data frame from the distance table
 
         Arguments:
             metric (string) -- model evaluation metric, such as 'precision@'
             metric_param (string) -- model evaluation metric parameter,
                 such as '300_abs'
-            model_type (string) -- model type, such as
-                sklearn.ensemble.RandomForestClassifier (may be None)
-            hyperparam (string) -- model hyperparameter, such as
-                max_depth (may be None)
         """
 
-        # optionally filter down to a certain type of model
-        # within the experiment, for instance,
-        # to look at random forest-specific hyperparameters.
-        if model_type is None:
-            model_type_sql = ''
-        else:
-            model_type_sql = "AND mg.model_type='{}'".format(model_type)
 
-        # grab sql snippet for querying hyperparameter from model_groups data
-        hyperparam_sql = self._hyperparam_sql(hyperparam)
-
+        model_group_union_sql = ' union all '.join([
+            '(select {} as model_group_id)'.format(model_group_id)
+            for model_group_id in model_group_ids
+        ])
         sel_params = {
             'metric': metric,
             'metric_param': metric_param,
-            'hyperparam_sql': hyperparam_sql,
-            'model_type_sql': model_type_sql,
-            'models_table': self.models_table,
-            'distance_table': dist_table,
+            'model_group_union_sql': model_group_union_sql,
+            'distance_table': self.distance_table,
             'max_below_best': max_below_best,
+            'model_group_str': self._model_group_sql(model_group_ids)
         }
-
         sel = """
-                with x_vals AS (
+                with model_group_ids as ({model_group_union_sql}),
+                x_vals AS (
                   SELECT m.model_group_id, s.pct_diff
                   FROM
                   (
@@ -219,31 +201,93 @@ class ModelSelector(object):
                   ) s
                   CROSS JOIN
                   (
-                  SELECT DISTINCT model_group_id FROM results.{models_table}
+                  SELECT DISTINCT model_group_id FROM model_group_ids
                   ) m
                 )
-                SELECT dist.model_group_id, model_type, {hyperparam_sql} pct_diff,
+                SELECT dist.model_group_id, pct_diff,
                        COUNT(*) AS num_models,
                        AVG(CASE WHEN below_best <= pct_diff THEN 1 ELSE 0 END) AS pct_of_time
                 FROM {distance_table} dist
-                JOIN results.model_groups mg USING(model_group_id)
                 JOIN x_vals USING(model_group_id)
                 WHERE
                     dist.metric='{metric}'
                     AND dist.parameter='{metric_param}'
                     and pct_diff <= {max_below_best}
                     and below_best <= {max_below_best}
-                {model_type_sql}
-                GROUP BY 1,2,3,4
+                    and model_group_id in ({model_group_str})
+                GROUP BY 1,2
             """.format(**sel_params)
 
         return pd.read_sql(sel, self.db_engine)
 
-    def get_all_distance_matrices(self, dist_table, metrics):
+    def model_groups_past_threshold_as_of(
+        self,
+        metric_filters,
+        model_group_ids,
+        train_end_time
+    ):
+        metric_filter_sql = ' union all '.join([
+            '''select
+                '{metric}'::text as metric,
+                '{metric_param}'::text as parameter,
+                {max_below} as max_below,
+                {min_value} as min_value
+            '''.format(
+                metric=metric_filter['metric'],
+                metric_param=metric_filter['metric_param'],
+                max_below=metric_filter['max_below_best'],
+                min_value=metric_filter['min_value']
+            )
+            for metric_filter in metric_filters
+        ])
+        query = '''with metric_filters as ({metric_filter_sql})
+select model_group_id
+from {dist_table} dist
+join metric_filters on (
+    metric_filters.metric = dist.metric
+    and metric_filters.parameter = dist.parameter
+    and metric_filters.max_below > dist.below_best
+    and metric_filters.min_value < dist.raw_value
+)
+where train_end_time = '{train_end_time}'
+and model_group_id in ({model_group_ids})
+        '''.format(
+            metric_filter_sql=metric_filter_sql,
+            dist_table=self.distance_table,
+            model_group_ids=self._model_group_sql(model_group_ids),
+            train_end_time=train_end_time
+        )
+        return set(row[0] for row in self.db_engine.execute(query))
+
+    def model_groups_past_threshold(
+        self,
+        metric_filters,
+        model_group_ids,
+        train_end_times
+    ):
+        total_model_groups = set()
+        for train_end_time in train_end_times:
+            model_group_ids = self.model_groups_past_threshold(
+                metric_filters,
+                model_group_ids,
+                train_end_time
+            )
+            logging.info(
+                'Found %s model groups past threshold for %s',
+                len(model_group_ids),
+                train_end_time
+            )
+            total_model_groups |= model_group_ids
+        logging.info(
+            'Found %s total model groups past threshold',
+            len(total_model_groups)
+        )
+        return total_model_groups
+                         
+    def get_all_distance_matrices(self, metrics):
         metrics_with_dfs = copy.deepcopy(metrics)
         for i, metric_config in enumerate(metrics):
             metrics_with_dfs[i]['distance_matrix'] = self.get_best_dist(
-                dist_table=dist_table,
                 metric=metric_config['metric'],
                 metric_param=metric_config['metric_param'],
                 max_below_best=metric_config['max_below_best'],
@@ -252,33 +296,54 @@ class ModelSelector(object):
 
     def calculate_regrets(
         self,
-        distance_table,
         selection_rule,
         model_group_ids,
-        train_end_dates,
+        train_end_times,
         metric,
         metric_param
     ):
+        """Calculate the regrets, or distance between the chosen model and
+            the maximum value next test time
+
+        Arguments:
+            selection_rule
+            model_group_ids
+            train_end_times
+            metric
+            metric_param
+
+        Returns: (list) for each train end time, the distance between the
+            model group chosen by the selection rule and the potential
+            maximum for the next train end time
+        """
         regrets = []
-        for train_end_date in train_end_dates:
-            choice = selection_rule(
-                self.db_engine,
-                model_group_ids,
-                train_end_date,
-                metric,
-                metric_param
-            )
+        for train_end_time in train_end_times:
+            df = pd.read_sql(
+                '''select * from {distance_table}
+                where train_end_time = '{train_end_time}'
+                and metric = '{metric}'
+                and parameter = '{metric_param}'
+                and model_group_id in ({model_group_str})
+                '''.format(
+                    distance_table=self.distance_table,
+                    train_end_time=train_end_time,
+                    metric=metric,
+                    metric_param=metric_param,
+                    model_group_str=self._model_group_sql(model_group_ids),
+                ),
+                self.db_engine
+            ).set_index('model_group_id')
+            choice = selection_rule(metric, metric_param, df)
             regret_result = self.db_engine.execute('''
                 select below_best_next_time
-                from %s(distance_table)
-                where model_group_id = %s(model_group_id)
-                and train_end_date = %s(train_end_date)
-                and metric = %s(metric)
-                and parameter = %s(metric_param)
-            ''',
-                distance_table=distance_table,
-                model_group_id=choice,
-                train_end_date=train_end_date,
+                from {distance_table}
+                where model_group_id = %(model_group_id)s
+                and train_end_time = %(train_end_time)s
+                and metric = %(metric)s
+                and parameter = %(metric_param)s
+            '''.format(distance_table=self.distance_table),
+                model_group_id=int(choice),
+                train_end_time=train_end_time,
                 metric=metric,
                 metric_param=metric_param
             )
