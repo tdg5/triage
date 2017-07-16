@@ -1,4 +1,4 @@
-from triage.model_selectors import ModelSelector, plot_all_best_dist
+from triage.model_selectors import ModelSelector
 import testing.postgresql
 from sqlalchemy import create_engine
 from results_schema.factories import EvaluationFactory, ModelFactory, ModelGroupFactory, init_engine, session
@@ -107,11 +107,16 @@ def test_create_model_selector_distance_table():
         ]
 
 
-def test_get_best_diff():
+def test_get_best_dist():
     with testing.postgresql.Postgresql() as postgresql:
         engine = create_engine(postgresql.url())
         ensure_db(engine)
         init_engine(engine)
+        model_groups = [
+            ModelGroupFactory(model_group_id=1, model_type='modelType1'),
+            ModelGroupFactory(model_group_id=2, model_type='modelType2'),
+        ]
+        session.commit()
         model_selector = ModelSelector(
             db_engine=engine,
             models_table='models',
@@ -122,9 +127,11 @@ def test_get_best_diff():
             (1, 1, '2014-01-01', 'precision@', '100_abs', 0.5, 0.1, 0.15),
             (1, 2, '2015-01-01', 'precision@', '100_abs', 0.5, 0.15, 0.18),
             (1, 3, '2016-01-01', 'precision@', '100_abs', 0.46, 0.21, 0.11),
-            (2, 4, '2014-01-01', 'precision@', '100_abs', 0.5, 0.1, 0.15),
-            (2, 5, '2015-01-01', 'precision@', '100_abs', 0.5, 0.15, 0.18),
-            (2, 6, '2016-01-01', 'precision@', '100_abs', 0.46, 0.21, 0.11),
+            (1, 4, '2017-01-01', 'precision@', '100_abs', 0.46, 0.12, 0.11),
+            (2, 5, '2014-01-01', 'precision@', '100_abs', 0.5, 0.1, 0.15),
+            (2, 6, '2015-01-01', 'precision@', '100_abs', 0.56, 0.09, 0.18),
+            (2, 7, '2016-01-01', 'precision@', '100_abs', 0.46, 0.21, 0.11),
+            (2, 8, '2017-01-01', 'precision@', '100_abs', 0.46, 0.12, 0.11),
         ]
         for dist_row in distance_rows:
             engine.execute(
@@ -135,22 +142,32 @@ def test_get_best_diff():
             metric='precision@',
             metric_param='100_abs',
             max_below_best=0.2,
-            model_group_ids=[1]
+            model_group_ids=[1, 2],
+            train_end_times=['2014-01-01', '2015-01-01', '2016-01-01']
         )
-        # make sure we have four columns and a row for each % diff value
-        assert df_dist.shape == (21, 4)
-        assert numpy.isclose(
-            df_dist[df_dist['pct_diff'] == 0.20]['pct_of_time'].values[0],
-            1.0
-        )
-        assert numpy.isclose(
-            df_dist[df_dist['pct_diff'] == 0.11]['pct_of_time'].values[0],
-            0.5
-        )
-        assert numpy.isclose(
-            df_dist[df_dist['pct_diff'] == 0.05]['pct_of_time'].values[0],
-            0.0
-        )
+        # assert that we have the right # of columns and a row for each % diff value
+        assert df_dist.shape == (42, 5)
+
+        # assert that 
+        for value in df_dist[df_dist['pct_diff'] == 0.20]['pct_of_time'].values:
+            assert numpy.isclose(value, 1.0)
+
+        for value in df_dist[
+            (df_dist['pct_diff'] == 0.11) &
+            (df_dist['model_group_id'] == 1)
+        ]['pct_of_time'].values:
+            assert numpy.isclose(value, 0.5)
+
+        # ensures that times outside the given train times are not
+        # taken into account, because the 2017 value would change this
+        for value in df_dist[
+            (df_dist['pct_diff'] == 0.11) &
+            (df_dist['model_group_id'] == 2)
+        ]['pct_of_time'].values:
+            assert numpy.isclose(value, 1.0)
+
+        for value in df_dist[df_dist['pct_diff'] == 0.05]['pct_of_time'].values:
+            assert numpy.isclose(value, 0.0)
 
 
 def test_model_groups_past_threshold_as_of():
@@ -158,93 +175,13 @@ def test_model_groups_past_threshold_as_of():
         engine = create_engine(postgresql.url())
         ensure_db(engine)
         init_engine(engine)
-        model_selector = ModelSelector(
-            db_engine=engine,
-            models_table='models',
-            distance_table='dist_table',
-        )
-        model_selector._create_distance_table()
-        distance_rows = [
-            # model group 1 should pass
-            (1, 1, '2014-01-01', 'precision@', '100_abs', 0.5, 0.0, 0.38),
-            (1, 2, '2015-01-01', 'precision@', '100_abs', 0.5, 0.38, 0.0),
-            (1, 3, '2016-01-01', 'precision@', '100_abs', 0.46, 0.0, 0.11),
-            (1, 1, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
-            (1, 2, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
-            (1, 3, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
-            # model group 2 should not pass because the min precision never passes
-            (2, 4, '2014-01-01', 'precision@', '100_abs', 0.39, 0.11, 0.5),
-            (2, 5, '2015-01-01', 'precision@', '100_abs', 0.38, 0.5, 0.12),
-            (2, 6, '2016-01-01', 'precision@', '100_abs', 0.34, 0.12, 0.11),
-            (2, 4, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
-            (2, 5, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
-            (2, 6, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
-            # model group 3 not included in this round
-            (3, 7, '2014-01-01', 'precision@', '100_abs', 0.28, 0.22, 0.0),
-            (3, 8, '2015-01-01', 'precision@', '100_abs', 0.88, 0.0, 0.02),
-            (3, 9, '2016-01-01', 'precision@', '100_abs', 0.44, 0.02, 0.11),
-            (3, 7, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
-            (3, 8, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
-            (3, 9, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
-            # model group 4 should not pass because precision is never that close
-            (4, 10, '2014-01-01', 'precision@', '100_abs', 0.29, 0.21, 0.21),
-            (4, 11, '2015-01-01', 'precision@', '100_abs', 0.67, 0.21, 0.21),
-            (4, 12, '2016-01-01', 'precision@', '100_abs', 0.25, 0.21, 0.21),
-            (4, 10, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
-            (4, 11, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
-            (4, 12, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
-            # model group 5 should not pass because precision is good but not recall
-            (5, 13, '2014-01-01', 'precision@', '100_abs', 0.5, 0.0, 0.38),
-            (5, 14, '2015-01-01', 'precision@', '100_abs', 0.5, 0.38, 0.0),
-            (5, 15, '2016-01-01', 'precision@', '100_abs', 0.46, 0.0, 0.11),
-            (5, 13, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
-            (5, 14, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
-            (5, 16, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+        model_groups = [
+            ModelGroupFactory(model_group_id=1, model_type='modelType1'),
+            ModelGroupFactory(model_group_id=2, model_type='modelType2'),
+            ModelGroupFactory(model_group_id=3, model_type='modelType3'),
+            ModelGroupFactory(model_group_id=4, model_type='modelType4'),
+            ModelGroupFactory(model_group_id=5, model_type='modelType5'),
         ]
-        for dist_row in distance_rows:
-            engine.execute(
-                'insert into dist_table values (%s, %s, %s, %s, %s, %s, %s, %s)',
-                dist_row
-            )
-        model_groups = model_selector.model_groups_past_threshold_as_of(
-            metric_filters=[
-                {
-                    'metric': 'precision@',
-                    'metric_param': '100_abs',
-                    'max_below_best': 0.2,
-                    'min_value': 0.4,
-                },
-                {
-                    'metric': 'recall@',
-                    'metric_param': '100_abs',
-                    'max_below_best': 0.2,
-                    'min_value': 0.4,
-                }
-            ],
-            model_group_ids=[1, 2, 4, 5],
-            train_end_time='2014-01-01',
-        )
-        assert model_groups == set([1, 5])
-
-
-def test_get_all_best_diffs():
-    with testing.postgresql.Postgresql() as postgresql:
-        engine = create_engine(postgresql.url())
-        ensure_db(engine)
-        init_engine(engine)
-        model_groups = {
-            'stable': ModelGroupFactory(model_type='myStableClassifier'),
-        }
-
-        class StableModelFactory(ModelFactory):
-            model_group_rel = model_groups['stable']
-
-
-        models = {
-            'stable_3y_ago': StableModelFactory(train_end_time='2014-01-01'),
-            'stable_2y_ago': StableModelFactory(train_end_time='2015-01-01'),
-            'stable_1y_ago': StableModelFactory(train_end_time='2016-01-01'),
-        }
         session.commit()
         model_selector = ModelSelector(
             db_engine=engine,
@@ -253,86 +190,84 @@ def test_get_all_best_diffs():
         )
         model_selector._create_distance_table()
         distance_rows = [
-            (
-                model_groups['stable'].model_group_id,
-                models['stable_3y_ago'].model_id,
-                models['stable_3y_ago'].train_end_time,
-                'precision@',
-                '100_abs',
-                0.5,
-                0.1,
-                0.15
-            ),
-            (
-                model_groups['stable'].model_group_id,
-                models['stable_2y_ago'].model_id,
-                models['stable_2y_ago'].train_end_time,
-                'precision@',
-                '100_abs',
-                0.5,
-                0.15,
-                0.18
-            ),
-            (
-                model_groups['stable'].model_group_id,
-                models['stable_1y_ago'].model_id,
-                models['stable_1y_ago'].train_end_time,
-                'precision@',
-                '100_abs',
-                0.46,
-                0.21,
-                0.11
-            ),
-            (
-                model_groups['stable'].model_group_id,
-                models['stable_3y_ago'].model_id,
-                models['stable_3y_ago'].train_end_time,
-                'recall@',
-                '100_abs',
-                0.3,
-                0.4,
-                0.42
-            ),
-            (
-                model_groups['stable'].model_group_id,
-                models['stable_2y_ago'].model_id,
-                models['stable_2y_ago'].train_end_time,
-                'recall@',
-                '100_abs',
-                0.34,
-                0.34,
-                0.32
-            ),
-            (
-                model_groups['stable'].model_group_id,
-                models['stable_1y_ago'].model_id,
-                models['stable_1y_ago'].train_end_time,
-                'recall@',
-                '100_abs',
-                0.32,
-                0.36,
-                0.35
-            )
+            # 2014: model group 1 should pass
+            (1, 1, '2014-01-01', 'precision@', '100_abs', 0.5, 0.0, 0.38),
+            (1, 1, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            # 2015: model group 1 should not pass because values are not close enough
+            (1, 2, '2015-01-01', 'precision@', '100_abs', 0.5, 0.38, 0.0),
+            (1, 2, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (1, 3, '2016-01-01', 'precision@', '100_abs', 0.46, 0.0, 0.11),
+            (1, 3, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # 2014: model group 2 should not pass because the min precision is too low
+            (2, 4, '2014-01-01', 'precision@', '100_abs', 0.39, 0.11, 0.5),
+            (2, 4, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            # 2015: model group 2 should pass
+            (2, 5, '2015-01-01', 'precision@', '100_abs', 0.69, 0.19, 0.12),
+            (2, 5, '2015-01-01', 'recall@', '100_abs', 0.69, 0.19, 0.0),
+            (2, 6, '2016-01-01', 'precision@', '100_abs', 0.34, 0.12, 0.11),
+            (2, 6, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # model group 3 not included in this round
+            (3, 7, '2014-01-01', 'precision@', '100_abs', 0.28, 0.22, 0.0),
+            (3, 7, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            (3, 8, '2015-01-01', 'precision@', '100_abs', 0.88, 0.0, 0.02),
+            (3, 8, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (3, 9, '2016-01-01', 'precision@', '100_abs', 0.44, 0.02, 0.11),
+            (3, 9, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # 2014: model group 4 should not pass because precision is not that close
+            (4, 10, '2014-01-01', 'precision@', '100_abs', 0.29, 0.21, 0.21),
+            (4, 10, '2014-01-01', 'recall@', '100_abs', 0.5, 0.0, 0.38),
+            # 2015: model group 4 should not pass because precision is not that close
+            (4, 11, '2015-01-01', 'precision@', '100_abs', 0.67, 0.21, 0.21),
+            (4, 11, '2015-01-01', 'recall@', '100_abs', 0.5, 0.38, 0.0),
+            (4, 12, '2016-01-01', 'precision@', '100_abs', 0.25, 0.21, 0.21),
+            (4, 12, '2016-01-01', 'recall@', '100_abs', 0.46, 0.0, 0.11),
+            # 2014: model group 5 should not pass because precision is good but not recall
+            (5, 13, '2014-01-01', 'precision@', '100_abs', 0.5, 0.0, 0.38),
+            (5, 13, '2014-01-01', 'recall@', '100_abs', 0.3, 0.2, 0.38),
+            # 2015: model group 5 should not pass because precision is good but not recall
+            (5, 14, '2015-01-01', 'precision@', '100_abs', 0.5, 0.38, 0.0),
+            (5, 14, '2015-01-01', 'recall@', '100_abs', 0.3, 0.58, 0.0),
+            (5, 15, '2016-01-01', 'precision@', '100_abs', 0.46, 0.0, 0.11),
+            (5, 16, '2016-01-01', 'recall@', '100_abs', 0.3, 0.16, 0.11),
         ]
         for dist_row in distance_rows:
             engine.execute(
                 'insert into dist_table values (%s, %s, %s, %s, %s, %s, %s, %s)',
                 dist_row
             )
+        metric_filters = [
+            {
+                'metric': 'precision@',
+                'metric_param': '100_abs',
+                'max_below_best': 0.2,
+                'min_value': 0.4,
+            },
+            {
+                'metric': 'recall@',
+                'metric_param': '100_abs',
+                'max_below_best': 0.2,
+                'min_value': 0.4,
+            }
+        ]
+        assert model_selector.model_groups_past_threshold_as_of(
+            metric_filters=metric_filters,
+            model_group_ids=[1, 2, 4, 5],
+            train_end_time='2014-01-01',
+        ) == set([1])
 
-        metrics_with_dfs = model_selector.get_all_distance_matrices(
-            metrics=[
-                {'metric': 'precision@', 'metric_param': '100_abs', 'max_below_best': 0.2},
-                {'metric': 'recall@', 'metric_param': '100_abs', 'max_below_best': 0.35},
-            ]
-        )
-        for metric_with_df in metrics_with_dfs:
-            assert 'distance_matrix' in metric_with_df
-        assert metrics_with_dfs[0]['metric'] == 'precision@'
-        assert metrics_with_dfs[0]['distance_matrix'].shape == (21, 4)
-        assert metrics_with_dfs[1]['metric'] == 'recall@'
-        assert metrics_with_dfs[1]['distance_matrix'].shape == (36, 4)
+        assert model_selector.model_groups_past_threshold_as_of(
+            metric_filters=metric_filters,
+            model_group_ids=[1, 2, 4, 5],
+            train_end_time='2015-01-01',
+        ) == set([2])
 
+        # The multi-date version of this function should have the union of
+        # the results of the two dates
+        assert model_selector.model_groups_past_threshold(
+            metric_filters=metric_filters,
+            model_group_ids=[1, 2, 4, 5],
+            train_end_times=['2014-01-01', '2015-01-01']
+        ) == set([1, 2])
 
 
 def test_calculate_regrets():

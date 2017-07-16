@@ -1,5 +1,8 @@
 import pandas as pd
+import numpy as np
 import copy
+import logging
+from triage.plotting import plot_cats
 
 
 def highest_metric_value(metric, metric_param, df):
@@ -66,13 +69,6 @@ def plot_best_dist(metric, metric_param, df_best_dist, **plt_format_args):
     )
 
 
-def plot_all_best_dist(metrics_with_dfs):
-    for metric in metrics_with_dfs:
-        plot_best_dist(
-            metric['metric'],
-            metric['metric_param'],
-            metric['distance_matrix']
-        )
 
 class ModelSelector(object):
     def __init__(self, db_engine, models_table, distance_table):
@@ -145,7 +141,7 @@ class ModelSelector(object):
                     ) below_best_next_time
                 from current_best_vals
             '''.format(
-                model_group_ids=self._model_group_sql(model_group_ids),
+                model_group_ids=self._str_in_sql(model_group_ids),
                 models_table=self.models_table,
                 metric=metric['metric'],
                 metric_param=metric['param'],
@@ -160,14 +156,15 @@ class ModelSelector(object):
         self._create_distance_table()
         self._populate_distance_table(model_group_ids, metrics)
 
-    def _model_group_sql(self, model_group_ids):
-        return ','.join(map(str, model_group_ids))
+    def _str_in_sql(self, values):
+        return ','.join(map(lambda x: "'{}'".format(x), values))
 
     def get_best_dist(
         self,
         metric,
         metric_param,
         model_group_ids,
+        train_end_times,
         max_below_best,
     ):
         """Fetch a best distance data frame from the distance table
@@ -189,7 +186,8 @@ class ModelSelector(object):
             'model_group_union_sql': model_group_union_sql,
             'distance_table': self.distance_table,
             'max_below_best': max_below_best,
-            'model_group_str': self._model_group_sql(model_group_ids)
+            'model_group_str': self._str_in_sql(model_group_ids),
+            'train_end_str': self._str_in_sql(train_end_times),
         }
         sel = """
                 with model_group_ids as ({model_group_union_sql}),
@@ -204,18 +202,20 @@ class ModelSelector(object):
                   SELECT DISTINCT model_group_id FROM model_group_ids
                   ) m
                 )
-                SELECT dist.model_group_id, pct_diff,
+                SELECT dist.model_group_id, pct_diff, mg.model_type,
                        COUNT(*) AS num_models,
                        AVG(CASE WHEN below_best <= pct_diff THEN 1 ELSE 0 END) AS pct_of_time
                 FROM {distance_table} dist
                 JOIN x_vals USING(model_group_id)
+                JOIN results.model_groups mg using (model_group_id)
                 WHERE
                     dist.metric='{metric}'
                     AND dist.parameter='{metric_param}'
                     and pct_diff <= {max_below_best}
                     and below_best <= {max_below_best}
                     and model_group_id in ({model_group_str})
-                GROUP BY 1,2
+                    and train_end_time in ({train_end_str})
+                GROUP BY 1,2,3
             """.format(**sel_params)
 
         return pd.read_sql(sel, self.db_engine)
@@ -226,37 +226,25 @@ class ModelSelector(object):
         model_group_ids,
         train_end_time
     ):
-        metric_filter_sql = ' union all '.join([
-            '''select
-                '{metric}'::text as metric,
-                '{metric_param}'::text as parameter,
-                {max_below} as max_below,
-                {min_value} as min_value
-            '''.format(
-                metric=metric_filter['metric'],
-                metric_param=metric_filter['metric_param'],
-                max_below=metric_filter['max_below_best'],
-                min_value=metric_filter['min_value']
-            )
-            for metric_filter in metric_filters
-        ])
-        query = '''with metric_filters as ({metric_filter_sql})
-select model_group_id
-from {dist_table} dist
-join metric_filters on (
-    metric_filters.metric = dist.metric
-    and metric_filters.parameter = dist.parameter
-    and metric_filters.max_below > dist.below_best
-    and metric_filters.min_value < dist.raw_value
-)
-where train_end_time = '{train_end_time}'
-and model_group_id in ({model_group_ids})
+        query = ' intersect '.join(['''
+            select model_group_id
+            from {dist_table} dist
+            where
+            train_end_time = '{train_end_time}'
+            and model_group_id in ({model_group_ids})
+            and metric = '{metric}'
+            and parameter = '{parameter}'
+            and below_best < {max_below}
+            and raw_value >= {min_value}
         '''.format(
-            metric_filter_sql=metric_filter_sql,
             dist_table=self.distance_table,
-            model_group_ids=self._model_group_sql(model_group_ids),
-            train_end_time=train_end_time
-        )
+            model_group_ids=self._str_in_sql(model_group_ids),
+            train_end_time=train_end_time,
+            metric=metric_filter['metric'],
+            parameter=metric_filter['metric_param'],
+            max_below=metric_filter['max_below_best'],
+            min_value=metric_filter['min_value']
+        ) for metric_filter in metric_filters])
         return set(row[0] for row in self.db_engine.execute(query))
 
     def model_groups_past_threshold(
@@ -267,33 +255,23 @@ and model_group_id in ({model_group_ids})
     ):
         total_model_groups = set()
         for train_end_time in train_end_times:
-            model_group_ids = self.model_groups_past_threshold(
-                metric_filters,
-                model_group_ids,
-                train_end_time
+            passing_model_group_ids = self.model_groups_past_threshold_as_of(
+                metric_filters=metric_filters,
+                model_group_ids=model_group_ids,
+                train_end_time=train_end_time
             )
             logging.info(
                 'Found %s model groups past threshold for %s',
-                len(model_group_ids),
+                len(passing_model_group_ids),
                 train_end_time
             )
-            total_model_groups |= model_group_ids
+            total_model_groups |= passing_model_group_ids
         logging.info(
             'Found %s total model groups past threshold',
             len(total_model_groups)
         )
         return total_model_groups
                          
-    def get_all_distance_matrices(self, metrics):
-        metrics_with_dfs = copy.deepcopy(metrics)
-        for i, metric_config in enumerate(metrics):
-            metrics_with_dfs[i]['distance_matrix'] = self.get_best_dist(
-                metric=metric_config['metric'],
-                metric_param=metric_config['metric_param'],
-                max_below_best=metric_config['max_below_best'],
-            )
-        return metrics_with_dfs
-
     def calculate_regrets(
         self,
         selection_rule,
@@ -329,7 +307,7 @@ and model_group_id in ({model_group_ids})
                     train_end_time=train_end_time,
                     metric=metric,
                     metric_param=metric_param,
-                    model_group_str=self._model_group_sql(model_group_ids),
+                    model_group_str=self._str_in_sql(model_group_ids),
                 ),
                 self.db_engine
             ).set_index('model_group_id')
@@ -349,3 +327,19 @@ and model_group_id in ({model_group_ids})
             )
             regrets.append([row[0] for row in regret_result][0])
         return regrets
+
+    def plot_all_best_dist(self, metric_filters, model_group_ids, train_end_times):
+        for metric_filter in metric_filters:
+            df = self.get_best_dist(
+                metric=metric_filter['metric'],
+                metric_param=metric_filter['metric_param'],
+                max_below_best=metric_filter['max_below_best'],
+                model_group_ids=model_group_ids,
+                train_end_times=train_end_times
+            )
+            plot_best_dist(
+                metric=metric_filter['metric'],
+                metric_param=metric_filter['metric_param'],
+                df_best_dist=df
+            )
+
