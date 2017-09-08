@@ -1,3 +1,5 @@
+# Arrangement of Components in a Triage Experiment
+
 ## Step 1 - Chop time
 
 ### 1. timechop.Timechop
