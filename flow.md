@@ -160,10 +160,18 @@ Input:
 Output:
 * metadata in the results.individual_importances table
 
+---
 
-## Steps 14-15 - Choose and evaluate models
+# Post-Experiment
+
+Everything above is under the current scope of an Experiment. Everything below is considered a post-modeling step, with more direct control of the flow by a researcher (in audition's case, importing code to run in a notebook, or in Tyra's case browsing a webapp)
+
+---
+
+## Steps 14-15 - Filter and evaluate models
 
 ### 14. audition (soon)
+
 Input:
 * list of model groups (1000s)
 * selection rule grid (e.g. average precision, variance in recall, distance from best precision)
@@ -173,6 +181,7 @@ Output:
 * config file to tell Tyra to only look at these model groups
 
 ### 15. tyra
+
 Input:
 * results schema
 * 'ranked table' materialized view (to help query speed)
@@ -182,3 +191,16 @@ Output:
 * insight
 * disruption
 * synergy
+
+## Step 16 - Put a model into production
+
+### 16. triage.PredictForward (soon)
+Once we pick a model, we want to generate new lists to send to the partner.
+
+Input:
+* model group id
+* as of date
+
+Output:
+* list predictions table
+* list metadata?
