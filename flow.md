@@ -157,3 +157,26 @@ Input:
 
 Output:
 * metadata in the results.individual_importances table
+
+
+## Steps 14-15 - Choose and evaluate models
+
+### 14. audition (soon)
+Input:
+* list of model groups (1000s)
+* selection rule grid (e.g. average precision, variance in recall, distance from best precision)
+
+Output:
+* smaller list of model groups (10s)
+* config file to tell Tyra to only look at these model groups
+
+### 15. tyra
+Input:
+* results schema
+* 'ranked table' materialized view (to help query speed)
+* (soon) audition model groups to filter and obviate need for materialized view
+
+Output:
+* insight
+* disruption
+* synergy
