@@ -166,8 +166,6 @@ Output:
 
 Everything above is under the current scope of an Experiment. Everything below is considered a post-modeling step, with more direct control of the flow by a researcher (in audition's case, importing code to run in a notebook, or in Tyra's case browsing a webapp)
 
----
-
 ## Steps 14-15 - Filter and evaluate models
 
 ### 14. audition (soon)
