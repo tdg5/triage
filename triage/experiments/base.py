@@ -36,7 +36,9 @@ class ExperimentBase(object):
         model_storage_class=None,
         project_path=None,
         replace=True,
+        label_generator_class=BinaryLabelGenerator
     ):
+        self.label_generator_class = label_generator_class
         self._check_config_version(config)
         self.config = config
         self.db_engine = db_engine
@@ -108,7 +110,7 @@ class ExperimentBase(object):
         )
 
         self.label_generator_factory = partial(
-            BinaryLabelGenerator,
+            self.label_generator_class,
             events_table=self.config['events_table'],
         )
 
