@@ -18,7 +18,7 @@ test_requirements = [
 
 setup(
     name='triage',
-    version='0.3.1.1',
+    version='0.3.2',
     description="Risk modeling and prediction",
     long_description=readme + '\n\n' + history,
     author="Center for Data Science and Public Policy",
