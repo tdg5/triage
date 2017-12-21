@@ -22,6 +22,7 @@ from triage.component.architect.state_table_generators import (
 )
 from triage.component.timechop import Timechop
 from triage.component.catwalk.db import ensure_db
+from triage.component.catwalk.model_grouping import ModelGrouper
 from triage.component.catwalk.model_trainers import ModelTrainer
 from triage.component.catwalk.predictors import Predictor
 from triage.component.catwalk.individual_importance import IndividualImportanceCalculator
@@ -176,6 +177,7 @@ class ExperimentBase(ABC):
                                            .format(self.experiment_hash),
             },
             matrix_directory=self.matrices_directory,
+            cohort_name=self.config.get('cohort_config', {}).get('name', None),
             states=self.config.get('cohort_config', {})\
             .get('dense_states', {})\
             .get('state_filters', []),
@@ -188,7 +190,7 @@ class ExperimentBase(ABC):
             project_path=self.project_path,
             experiment_hash=self.experiment_hash,
             model_storage_engine=self.model_storage_engine,
-            model_group_keys=self.config['model_group_keys'],
+            model_grouper=ModelGrouper(self.config.get('model_group_keys', [])),
             replace=self.replace
         )
 

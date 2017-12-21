@@ -131,7 +131,7 @@ How do we get the data for an individual matrix out of the database?
 Matrix metadata reference:
 - [Train matrix temporal info](https://github.com/dssg/timechop/blob/master/timechop/timechop.py#L433-L440)
 - [Test matrix temporal info](https://github.com/dssg/timechop/blob/master/timechop/timechop.py#L514-L523)
-- [Feature, label, index, state, user metadata](https://github.com/dssg/triage/blob/master/src/triage/component/architect/planner.py#L89-L112)
+- [Feature, label, index, cohort, user metadata](https://github.com/dssg/triage/blob/master/src/triage/component/architect/planner.py#L89-L112)
 
 ### Recap
 
@@ -148,7 +148,7 @@ Each matrix marked for training is sent through the configured grid in the exper
 
 #### Model Groups
 
-Each model is assigned a 'model group'. A model group represents a number of trained classifiers that we want to treat as equivalent by some criteria. By default, this is aimed at defining models which are equivalent across time splits, to make analyzing model stability easier. The experiment defines model groups by a static set of data about the model (classifier module, hyperparameters, feature list) and a user-supplied list of keys that must correspond to some key in the matrix metadata (See end of 'Retrieving Data and Saving Completed Matrix' section). This data is stored in the `results.model_groups` table, along with a `model_group_id` that is used as a foreign key in the `results.models` table.
+Each model is assigned a 'model group'. A model group represents a number of trained classifiers that we want to treat as equivalent by some criteria. By default, this is aimed at defining models which are equivalent across time splits, to make analyzing model stability easier. This default is accomplished with a set of 'model group keys' that includes data about the classifier (module, hyperparameters), temporal intervals used to create the train matrix (label timespan, training history, as-of-date frequency), and metadata describing the data in the train matrix (features and feature groups, label name, cohort name). The user can override this set of `model_group_keys` in the experiment definition, with all of the default information plus other matrix metadata at their disposal (See end of 'Retrieving Data and Saving Completed Matrix' section for more about matrix metadata). This data is stored in the `results.model_groups` table, along with a `model_group_id` that is used as a foreign key in the `results.models` table.
 
 
 #### Model Hash
