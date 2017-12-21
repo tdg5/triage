@@ -1,7 +1,7 @@
 from jinja2 import Template
 
 class NumericAggregation(Aggregation):
-    def __init__(self, intervals, aggregates, groups, intervals, from_obj, dates, state_table, state_group=None, prefix=None, suffix=None, date_column=None, output_date_column=None, input_min_date=None):
+    def __init__(self, intervals, column_name, aggregates, groups, from_obj, dates, state_table, state_group=None, prefix=None, suffix=None, date_column=None, output_date_column=None, input_min_date=None):
     
     self.intervals = intervals
 
@@ -15,7 +15,7 @@ class NumericAggregation(Aggregation):
                         suffix=suffix,
                         schema=schema)
 
-    def define_template(self):
+    def define_template(self, groups, intervals, functions, column_name, prefix):
     """Defines the templates for numeric aggregation. This template is then passed to the database connection object where it is executed in the standard collate format."""
     return """
     select {{ group }}, {{ as_of_date }}::date as date
@@ -32,6 +32,7 @@ class NumericAggregation(Aggregation):
     {% endfor %} )
     GROUP BY {{ group }}"""
 
+    def render_template(self):
 
 
   
