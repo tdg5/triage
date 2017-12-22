@@ -17,12 +17,12 @@ class NumericSpaceTimeAggregation(object):
         self.as_of_dates=as_of_dates
         self.groups=groups
 
-        self.data={"numeric_column": self.numeric_columns[0], 
+        self.data={"numeric_columns": self.numeric_columns, 
                     "functions": FUNCTIONS,
                     "prefix": self.prefix,
                     "table_name": self.from_obj,
-                    "as_of_date": self.as_of_dates[0],
-                    "group": self.groups[0],
+                    "as_of_dates": self.as_of_dates,
+                    "groups": self.groups,
                     "intervals": self.intervals}
  
         self.template = jinja2.Template(template)
